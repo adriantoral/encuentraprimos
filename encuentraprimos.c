@@ -1,3 +1,7 @@
+/* Author : Adrian Toral */
+/* Codigo : Descripcion */
+/* Fecha  : 15-12-2022 */
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <unistd.h>
@@ -43,7 +47,10 @@ T_MSG_BUFFER;
 
 int comprobarSiEsPrimo(long int numero)
 {
-	return 0;
+	// El numero tiene que ser mayor que 1 (float remainder by 0 exception)
+	if (numero < 2) return 0;
+	if ((numero % 2) == 0 && (numero % (numero / 2)) == 0) return 0;
+	return 1;
 }
 
 void informar(char *texto, int verboso)
@@ -72,14 +79,17 @@ int main(int argc, char **argv)
 
 	T_MSG_BUFFER message;
 
-	int pid, msgid, mypid, parentpid, pidservidor;
+	int pid, msgid, mypid, parentpid, pidservidor, *pidhijos;
 
 	int numhijos = 2; // Cambiar lectura por consola
 	if ((pid = fork()) == 0) // Creacion del servidor (SERVER)
 	{
+		// Variables de control de procesos
 		pid = getpid();
 		pidservidor = pid;
+		mypid = pid;
 
+		// Creacion de la cola
 		if (( key = ftok( "/tmp", 'C' )) == -1 )
 		{
 			perror("Fallo al pedir ftok");
@@ -94,6 +104,7 @@ int main(int argc, char **argv)
 		}
 		printf("Server: Message queue id = %u\n", msgid );
 
+		// Creacion de los hijos
 		for (int i=0; i<numhijos; i++)
 		{
 			if (pid > 0)
@@ -106,27 +117,78 @@ int main(int argc, char **argv)
 			}
 		}
 
-		if (mypid != pidservidor)
+		if (mypid != pidservidor) // Si es calculador
 		{
+			// Cambia el tipo de codigo para el mensaje
 			message.msg_type = COD_ESTOY_AQUI;
+
+			// Establece el mensaje a enviar
 			sprintf(message.msg_text, "%d", mypid);
+
+			// Envia el mensaje a la cola
 			msgsnd(msgid, &message, sizeof(message), IPC_NOWAIT);
 
-			sleep(60);
+			// Espera 10 segundos antes de recibir los limites
+			sleep(10);
+
+			// Lee el primer mensaje
+			msgrcv(msgid, &message, sizeof(message), 0, 0);
+
+			// Extrae los limites del mensaje leido
+			int rangoInicial, rangoFinal;
+			sscanf(message.msg_text, "%d %d", &rangoInicial, &rangoFinal);
+			printf("[%d] Recivido el rango: %d-%d\n", mypid, rangoInicial, rangoFinal);
+
+			// Calcula si es primo
+			for (int i=rangoInicial; i<=rangoFinal; i++)
+				printf(comprobarSiEsPrimo(i) ? "[%d] El numero %d es primo\n" : "[%d] El numero %d no es primo\n", mypid, i);
+
+			// Termina el hijo
 			exit(0);
 		}
 
-		else
+		else // Si es el servidor
 		{
 			for (int j=0; j<numhijos; j++)
 			{
+				// Crea la memoria dinamica para los pid
+				pidhijos = realloc(pidhijos, sizeof(int) * (j + 1));
+
+				// Lee los mensajes de la cola
 				msgrcv(msgid, &message, sizeof(message), 0, 0);
 				sscanf(message.msg_text, "%d", &pid);
-				printf("\nMe ha enviado un mensaje el hijo %d\n", pid);
+
+				// Guarda en memoria dinamica los pid
+				pidhijos[j] = pid;
+
+				// Muestra en pantalla el mensaje recibido
+				printf("[%d] Me ha enviado un mensaje el hijo %d\n", mypid, pid);
 			}
 
+			for (int j=0; j<numhijos; j++)
+			{
+				// Cambia el tipo de codigo para el mensaje
+				message.msg_type = COD_LIMITES;
+
+				// Establece los limites para los calculadores
+				sprintf(message.msg_text, "%d %d", 0, 10);
+
+				// Muestra en pantalla el los limites enviados
+				printf("[%d] Enviado el rango: %s\n", mypid, message.msg_text);
+
+				// Envia los limites en el mensaje
+				msgsnd(msgid, &message, sizeof(message), IPC_NOWAIT);
+			}
+
+			// Espera 60 segundos antes de terminar
 			sleep(60);
+			printf("fin\n");
+
+			// Elimina la cola
 			msgctl(msgid, IPC_RMID, NULL);
+
+			// Libera la memoria dinamica
+			free(pidhijos);
 		}
 	}
 

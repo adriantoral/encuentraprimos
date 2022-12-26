@@ -1,5 +1,5 @@
 /* Author : Adrian Toral */
-/* Codigo : Descripcion */
+/* Codigo : Cola de mensajes entre procesos */
 /* Fecha  : 15-12-2022 */
 
 #include <stdio.h>
@@ -60,7 +60,9 @@ void informar(char *texto, int verboso)
 
 void imprimirJerarquiaProc(int pidraiz, int pidservidor, int *pidhijos, int numhijos)
 {
-
+	printf("\nRAIZ     SERV     CALC\n%5d    %5d    %5d\n", pidraiz, pidservidor, pidhijos[0]);
+	for (int i=1; i<numhijos; i++) printf("-----    -----    %5d\n", pidhijos[i]);
+	printf("\n");
 }
 
 int contarLineas()
@@ -70,7 +72,7 @@ int contarLineas()
 
 void alarmHandler(int signo)
 {
-
+	printf("SOLO PARA EL ESQUELETO... Han pasado 5 segundos\n");
 }
 
 int main(int argc, char **argv)
@@ -90,19 +92,19 @@ int main(int argc, char **argv)
 		mypid = pid;
 
 		// Creacion de la cola
-		if (( key = ftok( "/tmp", 'C' )) == -1 )
+		if ((key = ftok( "/tmp", 'C')) == -1)
 		{
 			perror("Fallo al pedir ftok");
-			exit( 1 );
+			exit(1);
 		}
 		printf("Server: System V IPC key = %u\n", key);
 
-		if (( msgid = msgget( key, IPC_CREAT | 0666 )) == -1 )
+		if ((msgid = msgget( key, IPC_CREAT | 0666)) == -1)
 		{
-			perror( "Fallo al crear la cola de mensajes" );
-			exit( 2 );
+			perror("Fallo al crear la cola de mensajes");
+			exit(2);
 		}
-		printf("Server: Message queue id = %u\n", msgid );
+		printf("Server: Message queue id = %u\n", msgid);
 
 		// Creacion de los hijos
 		for (int i=0; i<numhijos; i++)
@@ -131,8 +133,8 @@ int main(int argc, char **argv)
 			// Espera 10 segundos antes de recibir los limites
 			sleep(10);
 
-			// Lee el primer mensaje
-			msgrcv(msgid, &message, sizeof(message), 0, 0);
+			// Lee el primer mensaje con el codigo de limites
+			msgrcv(msgid, &message, sizeof(message), COD_LIMITES, 0);
 
 			// Extrae los limites del mensaje leido
 			int rangoInicial, rangoFinal;
@@ -141,7 +143,18 @@ int main(int argc, char **argv)
 
 			// Calcula si es primo
 			for (int i=rangoInicial; i<=rangoFinal; i++)
-				printf(comprobarSiEsPrimo(i) ? "[%d] El numero %d es primo\n" : "[%d] El numero %d no es primo\n", mypid, i);
+				if (comprobarSiEsPrimo(i))
+				{
+					// Si encuentra el primo enviarlo a la cola
+					message.msg_type = COD_RESULTADOS;
+					sprintf(message.msg_text, "%d %d", mypid, i);
+					msgsnd(msgid, &message, sizeof(message), IPC_NOWAIT);
+				}
+
+			// Mandar mensaje de fin
+			message.msg_type = COD_FIN;
+			sprintf(message.msg_text, "%d", mypid);
+			msgsnd(msgid, &message, sizeof(message), IPC_NOWAIT);
 
 			// Termina el hijo
 			exit(0);
@@ -154,8 +167,8 @@ int main(int argc, char **argv)
 				// Crea la memoria dinamica para los pid
 				pidhijos = realloc(pidhijos, sizeof(int) * (j + 1));
 
-				// Lee los mensajes de la cola
-				msgrcv(msgid, &message, sizeof(message), 0, 0);
+				// Lee los mensajes de la cola con el codigo estoy aqui
+				msgrcv(msgid, &message, sizeof(message), COD_ESTOY_AQUI, 0);
 				sscanf(message.msg_text, "%d", &pid);
 
 				// Guarda en memoria dinamica los pid
@@ -180,9 +193,36 @@ int main(int argc, char **argv)
 				msgsnd(msgid, &message, sizeof(message), IPC_NOWAIT);
 			}
 
+			// Mostrar en pantalla la jerarquia de procesos
+			imprimirJerarquiaProc(getppid(), pidservidor, pidhijos, numhijos);
+
 			// Espera 60 segundos antes de terminar
-			sleep(60);
-			printf("fin\n");
+			sleep(20);
+
+			struct msqid_ds quedanMensajes;
+			do // Leer los mensajes mientras quede alguno en la cola
+			{
+				int numeroPrimo = 0, pidPrimo = 0;
+
+				// Lee los mensajes de la cola
+				msgrcv(msgid, &message, sizeof(message), 0, 0);
+				if (message.msg_type == COD_RESULTADOS)
+				{
+					// Leer los datos si el codigo es el de resultados
+					sscanf(message.msg_text, "%d %d", &pidPrimo, &numeroPrimo);
+
+					// Mostrar en pantalla el resultado
+					printf("[%d] Encontrado el numero primo: %d\n", pidPrimo, numeroPrimo);
+				}
+
+				else if (message.msg_type == COD_FIN)
+				{
+					// Leer los datos si el codigo es el de fin
+					sscanf(message.msg_text, "%d", &pidPrimo);
+					printf("[%d] Proceso terminado\n", pidPrimo);
+				}
+			}
+			while(!msgctl(msgid, IPC_STAT, &quedanMensajes));
 
 			// Elimina la cola
 			msgctl(msgid, IPC_RMID, NULL);

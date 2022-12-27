@@ -73,7 +73,7 @@ void informar(char *texto, int verboso)
 	}
 
 	// Escribir el resultado en el fichero
-	FILE primos = fopen(NOMBRE_FICH, "a");
+	FILE *primos = fopen(NOMBRE_FICH, "a");
 	fputs(resultado, primos);
 	fclose(primos);
 }

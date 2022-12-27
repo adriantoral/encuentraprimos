@@ -48,19 +48,16 @@ T_MSG_BUFFER;
 
 int comprobarSiEsPrimo(long int numero)
 {
-	// El numero tiene que ser mayor que 1 (float remainder by 0 exception)
-	if (numero < 2) return 0;
-	if ((numero % 2) == 0 && (numero % (numero / 2)) == 0) return 0;
+	for (int i=2; i<=(numero/2); i++)
+		if (!(numero % i)) return 0;
+
 	return 1;
 }
 
 void informar(char *texto, int verboso)
 {
-	if (verboso)
-	{
-		// Mostrar en pantalla el resultado
-		printf("%s\n", texto);
-	}
+	// Mostrar en pantalla el resultado
+	if (verboso) printf("%s\n", texto);
 
 	// Escribir el resultado en el fichero
 	FILE *primos = fopen(NOMBRE_FICH, "a");
@@ -84,21 +81,31 @@ int cuentasegundos = 0;
 
 void alarmHandler(int signo)
 {
-	cuentasegundos += 5;
+	cuentasegundos += INTERVALO_TIMER;
 	alarm(INTERVALO_TIMER);
 }
 
-int main(int argc, char **argv)
+int main(int argc, char *argv[])
 {
 	key_t key;
 
 	T_MSG_BUFFER message;
 
-	int pid, msgid, mypid, parentpid, pidservidor, *pidhijos, verboso = 1, numeroprimos = 0;
+	int numhijos = 2, verboso = 0;
+
+	/* if (argc >= 3) */
+	/* { */
+	/* 	// Definir las variables por parametros */
+	/* 	numhijos = strtol(argv[1], NULL, 10); */
+	/* 	verboso = strtol(argv[2], NULL, 10); */
+	/* } */
+
+	printf("%d %d\n", numhijos, verboso);
+
+	int pid, msgid, mypid, parentpid, pidservidor, *pidhijos, numeroprimos = 0, rango = BASE, limite = (int)(RANGO / numhijos);
 
 	FILE *cuentaprimos = fopen(NOMBRE_FICH_CUENTA, "a");
 
-	int numhijos = 2; // Cambiar lectura por consola
 	if ((pid = fork()) == 0) // Creacion del servidor (SERVER)
 	{
 		// Variables de control de procesos
@@ -180,7 +187,7 @@ int main(int argc, char **argv)
 			for (int j=0; j<numhijos; j++)
 			{
 				// Crea la memoria dinamica para los pid
-				pidhijos = realloc(pidhijos, sizeof(int) * (j + 1));
+				pidhijos = (int *)realloc(pidhijos, sizeof(int) * (j + 1));
 
 				// Lee los mensajes de la cola con el codigo estoy aqui
 				msgrcv(msgid, &message, sizeof(message), COD_ESTOY_AQUI, 0);
@@ -199,7 +206,8 @@ int main(int argc, char **argv)
 				message.msg_type = COD_LIMITES;
 
 				// Establece los limites para los calculadores
-				sprintf(message.msg_text, "%d %d", 0, 10);
+				sprintf(message.msg_text, "%d %d", rango, rango + limite);
+				rango += limite;
 
 				// Muestra en pantalla el los limites enviados
 				printf("[%d] Enviado el rango: %s\n", mypid, message.msg_text);
@@ -214,18 +222,21 @@ int main(int argc, char **argv)
 			// Espera 60 segundos antes de terminar
 			sleep(20);
 
+			// Estructura para comprobar si quedan mensajes
 			struct msqid_ds quedanMensajes;
-			do // Leer los mensajes mientras quede alguno en la cola
+			msgctl(msgid, IPC_STAT, &quedanMensajes);
+
+			while (quedanMensajes.msg_qnum) // Leer los mensajes mientras quede alguno en la cola
 			{
+				// Variables de control
 				int numeroPrimo = 0, pidPrimo = 0;
 
 				// Lee los mensajes de la cola
 				msgrcv(msgid, &message, sizeof(message), 0, 0);
 				if (message.msg_type == COD_RESULTADOS)
 				{
+					// Variables de control
 					char resultado[100], resultado2[100];
-
-					int numeroPrimo = 0, pidPrimo = 0;
 
 					// Leer los datos si el codigo es el de resultados
 					sscanf(message.msg_text, "%d %d", &pidPrimo, &numeroPrimo);
@@ -233,12 +244,16 @@ int main(int argc, char **argv)
 					// Crear la cadena de resultado
 					sprintf(resultado2, "[%d] Encontrado el numero primo: %d\n", pidPrimo, numeroPrimo);
 
+					// Mostrar en pantalla los mensajes y guardarlos en el fichero
 					informar(resultado2, verboso);
 
-					if (!(numeroprimos % 5))
+					// Si coincide que el numero de primos sea divisible por 5
+					if (!(++numeroprimos % 5))
 					{
-						sprintf(resultado, "%d\n", numeroPrimo);
+						// Crear la cadena de resultado
+						sprintf(resultado, "%d %d\n",numeroprimos, numeroPrimo);
 
+						// Guardar la cadena en el fichero
 						fputs(resultado, cuentaprimos);
 					}
 				}
@@ -249,11 +264,10 @@ int main(int argc, char **argv)
 					sscanf(message.msg_text, "%d", &pidPrimo);
 					printf("[%d] Proceso terminado\n", pidPrimo);
 				}
-			}
-			while(!msgctl(msgid, IPC_STAT, &quedanMensajes));
 
-			// Mostrar en pantalla los segundos pasados
-			printf("Tiempo transcurrido: %d\n", cuentasegundos);
+				// Comprobar si quedan mensajes
+				msgctl(msgid, IPC_STAT, &quedanMensajes);
+			}
 
 			// Elimina la cola
 			msgctl(msgid, IPC_RMID, NULL);
@@ -268,9 +282,15 @@ int main(int argc, char **argv)
 
 	else
 	{
+		// Manda una senal de inicio
 		alarm(INTERVALO_TIMER);
 		signal(SIGALRM, alarmHandler);
-		for (;;) sleep(1);
+
+		// Espera al hijo (SERVER)
+		wait(NULL);
+
+		// Mostrar en pantalla los segundos pasados
+		printf("Tiempo transcurrido: %d\n", cuentasegundos);
 	}
 
 	return 0;

@@ -1,4 +1,5 @@
 /* Author : Adrian Toral */
+/* Author : Miguel Gracia */
 /* Codigo : Cola de mensajes entre procesos */
 /* Fecha  : 15-12-2022 */
 
@@ -55,7 +56,26 @@ int comprobarSiEsPrimo(long int numero)
 
 void informar(char *texto, int verboso)
 {
+	char resultado[100];
 
+	if (verboso)
+	{
+		int numeroPrimo = 0, pidPrimo = 0;
+
+		// Leer los datos si el codigo es el de resultados
+		sscanf(texto, "%d %d", &pidPrimo, &numeroPrimo);
+
+		// Crear la cadena de resultado
+		sprintf(resultado, "[%d] Encontrado el numero primo: %d", pidPrimo, numeroPrimo);
+
+		// Mostrar en pantalla el resultado
+		printf("%s\n", resultado);
+	}
+
+	// Escribir el resultado en el fichero
+	FILE primos = fopen(NOMBRE_FICH, "a");
+	fputs(resultado, primos);
+	fclose(primos);
 }
 
 void imprimirJerarquiaProc(int pidraiz, int pidservidor, int *pidhijos, int numhijos)
@@ -81,7 +101,7 @@ int main(int argc, char **argv)
 
 	T_MSG_BUFFER message;
 
-	int pid, msgid, mypid, parentpid, pidservidor, *pidhijos;
+	int pid, msgid, mypid, parentpid, pidservidor, *pidhijos, verboso = 1;
 
 	int numhijos = 2; // Cambiar lectura por consola
 	if ((pid = fork()) == 0) // Creacion del servidor (SERVER)
@@ -206,15 +226,8 @@ int main(int argc, char **argv)
 
 				// Lee los mensajes de la cola
 				msgrcv(msgid, &message, sizeof(message), 0, 0);
-				if (message.msg_type == COD_RESULTADOS)
-				{
-					// Leer los datos si el codigo es el de resultados
-					sscanf(message.msg_text, "%d %d", &pidPrimo, &numeroPrimo);
-
-					// Mostrar en pantalla el resultado
-					printf("[%d] Encontrado el numero primo: %d\n", pidPrimo, numeroPrimo);
-				}
-
+				if (message.msg_type == COD_RESULTADOS) informar(message.msg_text, verboso);
+				
 				else if (message.msg_type == COD_FIN)
 				{
 					// Leer los datos si el codigo es el de fin

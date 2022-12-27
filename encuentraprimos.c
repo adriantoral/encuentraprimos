@@ -56,25 +56,15 @@ int comprobarSiEsPrimo(long int numero)
 
 void informar(char *texto, int verboso)
 {
-	char resultado[100];
-
 	if (verboso)
 	{
-		int numeroPrimo = 0, pidPrimo = 0;
-
-		// Leer los datos si el codigo es el de resultados
-		sscanf(texto, "%d %d", &pidPrimo, &numeroPrimo);
-
-		// Crear la cadena de resultado
-		sprintf(resultado, "[%d] Encontrado el numero primo: %d", pidPrimo, numeroPrimo);
-
 		// Mostrar en pantalla el resultado
-		printf("%s\n", resultado);
+		printf("%s\n", texto);
 	}
 
 	// Escribir el resultado en el fichero
 	FILE *primos = fopen(NOMBRE_FICH, "a");
-	fputs(resultado, primos);
+	fputs(texto, primos);
 	fclose(primos);
 }
 
@@ -90,9 +80,12 @@ int contarLineas()
 	return 0;
 }
 
+int cuentasegundos = 0;
+
 void alarmHandler(int signo)
 {
-	printf("SOLO PARA EL ESQUELETO... Han pasado 5 segundos\n");
+	cuentasegundos += 5;
+	alarm(INTERVALO_TIMER);
 }
 
 int main(int argc, char **argv)
@@ -101,7 +94,9 @@ int main(int argc, char **argv)
 
 	T_MSG_BUFFER message;
 
-	int pid, msgid, mypid, parentpid, pidservidor, *pidhijos, verboso = 1;
+	int pid, msgid, mypid, parentpid, pidservidor, *pidhijos, verboso = 1, numeroprimos = 0;
+
+	FILE *cuentaprimos = fopen(NOMBRE_FICH_CUENTA, "a");
 
 	int numhijos = 2; // Cambiar lectura por consola
 	if ((pid = fork()) == 0) // Creacion del servidor (SERVER)
@@ -226,8 +221,28 @@ int main(int argc, char **argv)
 
 				// Lee los mensajes de la cola
 				msgrcv(msgid, &message, sizeof(message), 0, 0);
-				if (message.msg_type == COD_RESULTADOS) informar(message.msg_text, verboso);
-				
+				if (message.msg_type == COD_RESULTADOS)
+				{
+					char resultado[100], resultado2[100];
+
+					int numeroPrimo = 0, pidPrimo = 0;
+
+					// Leer los datos si el codigo es el de resultados
+					sscanf(message.msg_text, "%d %d", &pidPrimo, &numeroPrimo);
+
+					// Crear la cadena de resultado
+					sprintf(resultado2, "[%d] Encontrado el numero primo: %d\n", pidPrimo, numeroPrimo);
+
+					informar(resultado2, verboso);
+
+					if (!(numeroprimos % 5))
+					{
+						sprintf(resultado, "%d\n", numeroPrimo);
+
+						fputs(resultado, cuentaprimos);
+					}
+				}
+
 				else if (message.msg_type == COD_FIN)
 				{
 					// Leer los datos si el codigo es el de fin
@@ -237,8 +252,14 @@ int main(int argc, char **argv)
 			}
 			while(!msgctl(msgid, IPC_STAT, &quedanMensajes));
 
+			// Mostrar en pantalla los segundos pasados
+			printf("Tiempo transcurrido: %d\n", cuentasegundos);
+
 			// Elimina la cola
 			msgctl(msgid, IPC_RMID, NULL);
+
+			// Cierra los ficheros
+			fclose(cuentaprimos);
 
 			// Libera la memoria dinamica
 			free(pidhijos);

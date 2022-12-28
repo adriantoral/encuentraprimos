@@ -70,7 +70,10 @@ void imprimirJerarquiaProc(int pidraiz, int pidservidor, int *pidhijos, int numh
 int contarLineas()
 {
 	// Abre el fichero
-	FILE *cuentaprimos = fopen(NOMBRE_FICH_CUENTA, "r");
+	FILE *cuentaprimos = fopen(NOMBRE_FICH, "r");
+
+	// Salir si no existe el fichero
+	if (cuentaprimos == NULL) exit(ERR_FSAL);
 
 	// Variable de control
 	int numeroLineas = 0;
@@ -117,6 +120,15 @@ int main(int argc, char *argv[])
 
 	FILE *cuentaprimos = fopen(NOMBRE_FICH_CUENTA, "w"), *primos = fopen(NOMBRE_FICH, "w");
 
+	if (cuentaprimos == NULL || primos == NULL)
+	{
+		// Mostrar mensaje de error
+		perror("Fallo al crear los ficheros de salida");
+
+		// Salir del programa
+		exit(ERR_FSAL);
+	}
+
 	if ((pid = fork()) == 0) // Creacion del servidor (SERVER)
 	{
 		// Variables de control de procesos
@@ -144,7 +156,7 @@ int main(int argc, char *argv[])
 		{
 			if (pid > 0)
 			{
-				if ((pid = fork()) == 0)
+				if (!(pid = fork()))
 				{
 					parentpid = getppid();
 					mypid = getpid();
@@ -154,13 +166,9 @@ int main(int argc, char *argv[])
 
 		if (mypid != pidservidor) // Si es calculador
 		{
-			// Cambia el tipo de codigo para el mensaje
+			// Enviar el mensaje de que esta activo
 			message.msg_type = COD_ESTOY_AQUI;
-
-			// Establece el mensaje a enviar
 			sprintf(message.msg_text, "%d", mypid);
-
-			// Envia el mensaje a la cola
 			msgsnd(msgid, &message, sizeof(message), IPC_NOWAIT);
 
 			// Espera 10 segundos antes de recibir los limites
@@ -244,7 +252,7 @@ int main(int argc, char *argv[])
 				if (message.msg_type == COD_RESULTADOS)
 				{
 					// Variables de control
-					char resultado[100], resultado2[100];
+					char resultado[LONGITUD_MSG], resultado2[LONGITUD_MSG];
 
 					// Leer los datos si el codigo es el de resultados
 					sscanf(message.msg_text, "%d %d", &pidPrimo, &numeroPrimo);
@@ -298,6 +306,9 @@ int main(int argc, char *argv[])
 
 			// Libera la memoria dinamica
 			free(pidhijos);
+
+			// Finalizar el SERVER
+			exit(0);
 		}
 	}
 

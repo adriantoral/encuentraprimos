@@ -97,6 +97,20 @@ void alarmHandler(int signo)
 	// Incrementar el contador
 	cuentasegundos += INTERVALO_TIMER;
 
+	// El numero de primos encontrados
+	int numeroPrimo = 0;
+
+	// Abrir el fichero para la lectura
+	FILE *cuentaprimos = fopen(NOMBRE_FICH_CUENTA, "r");
+	if (cuentaprimos != NULL)
+	{
+		fscanf(cuentaprimos,"%d",&numeroPrimo);
+		fclose(cuentaprimos);
+		printf("%02d segundos: %d primos encontrados\n", cuentasegundos, numeroPrimo);
+	}
+
+	else printf("%02d segundos\n", cuentasegundos);
+
 	// Recursividad de la funcion
 	alarm(INTERVALO_TIMER);
 }
@@ -119,6 +133,7 @@ int main(int argc, char *argv[])
 	int pid, msgid, mypid, parentpid, pidservidor, hijosterminados = 0, *pidhijos = NULL, numeroprimos = 0, rango = BASE, limite = (int)(RANGO / numhijos);
 
 	FILE *cuentaprimos = fopen(NOMBRE_FICH_CUENTA, "w"), *primos = fopen(NOMBRE_FICH, "w");
+	fclose(cuentaprimos); fclose(primos); // Limpiar los ficheros
 
 	if (cuentaprimos == NULL || primos == NULL)
 	{
@@ -264,16 +279,20 @@ int main(int argc, char *argv[])
 					informar(resultado2, verboso);
 
 					// Guardar el contenido en el fichero
+					primos = fopen(NOMBRE_FICH, "a");
 					fputs(resultado2, primos);
+					fclose(primos);
 
 					// Si coincide que el numero de primos sea divisible por 5
 					if (!(++numeroprimos % CADA_CUANTOS_ESCRIBO))
 					{
 						// Crear la cadena de resultado
-						sprintf(resultado, "%3d %d\n",numeroprimos, numeroPrimo);
+						sprintf(resultado, "%d\n", numeroprimos);
 
 						// Guardar la cadena en el fichero
+						cuentaprimos = fopen(NOMBRE_FICH_CUENTA, "w");
 						fputs(resultado, cuentaprimos);
+						fclose(cuentaprimos);
 					}
 				}
 
@@ -300,10 +319,6 @@ int main(int argc, char *argv[])
 			// Elimina la cola
 			msgctl(msgid, IPC_RMID, NULL);
 
-			// Cierra los ficheros
-			fclose(cuentaprimos);
-			fclose(primos);
-
 			// Libera la memoria dinamica
 			free(pidhijos);
 
@@ -322,7 +337,6 @@ int main(int argc, char *argv[])
 		wait(NULL);
 
 		// Mostrar en pantalla los segundos pasados
-		printf("Tiempo transcurrido: %d\n", cuentasegundos);
 		printf("RESULTADO: %d primos detectados\n", contarLineas());
 	}
 

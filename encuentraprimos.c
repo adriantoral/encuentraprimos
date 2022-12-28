@@ -57,12 +57,7 @@ int comprobarSiEsPrimo(long int numero)
 void informar(char *texto, int verboso)
 {
 	// Mostrar en pantalla el resultado
-	if (verboso) printf("%s\n", texto);
-
-	// Escribir el resultado en el fichero
-	FILE *primos = fopen(NOMBRE_FICH, "a");
-	fputs(texto, primos);
-	fclose(primos);
+	if (verboso) printf("%s", texto);
 }
 
 void imprimirJerarquiaProc(int pidraiz, int pidservidor, int *pidhijos, int numhijos)
@@ -74,14 +69,32 @@ void imprimirJerarquiaProc(int pidraiz, int pidservidor, int *pidhijos, int numh
 
 int contarLineas()
 {
-	return 0;
+	// Abre el fichero
+	FILE *cuentaprimos = fopen(NOMBRE_FICH_CUENTA, "r");
+
+	// Variable de control
+	int numeroLineas = 0;
+
+	// Incrementar en 1 la variable si es una nueva linea
+	while(!feof(cuentaprimos))
+		if(fgetc(cuentaprimos) == '\n')
+			numeroLineas++;
+
+	// Cerrar el fichero
+	fclose(cuentaprimos);
+
+	// Devolver el numero de lineas
+	return numeroLineas;
 }
 
 int cuentasegundos = 0;
 
 void alarmHandler(int signo)
 {
+	// Incrementar el contador
 	cuentasegundos += INTERVALO_TIMER;
+
+	// Recursividad de la funcion
 	alarm(INTERVALO_TIMER);
 }
 
@@ -93,18 +106,16 @@ int main(int argc, char *argv[])
 
 	int numhijos = 2, verboso = 0;
 
-	/* if (argc >= 3) */
-	/* { */
-	/* 	// Definir las variables por parametros */
-	/* 	numhijos = strtol(argv[1], NULL, 10); */
-	/* 	verboso = strtol(argv[2], NULL, 10); */
-	/* } */
+	if (argc >= 3)
+	{
+		// Definir las variables por parametros
+		numhijos = strtol(argv[1], NULL, 10);
+		verboso = strtol(argv[2], NULL, 10);
+	}
 
-	printf("%d %d\n", numhijos, verboso);
+	int pid, msgid, mypid, parentpid, pidservidor, hijosterminados = 0, *pidhijos = NULL, numeroprimos = 0, rango = BASE, limite = (int)(RANGO / numhijos);
 
-	int pid, msgid, mypid, parentpid, pidservidor, *pidhijos, numeroprimos = 0, rango = BASE, limite = (int)(RANGO / numhijos);
-
-	FILE *cuentaprimos = fopen(NOMBRE_FICH_CUENTA, "a");
+	FILE *cuentaprimos = fopen(NOMBRE_FICH_CUENTA, "w"), *primos = fopen(NOMBRE_FICH, "w");
 
 	if ((pid = fork()) == 0) // Creacion del servidor (SERVER)
 	{
@@ -153,7 +164,7 @@ int main(int argc, char *argv[])
 			msgsnd(msgid, &message, sizeof(message), IPC_NOWAIT);
 
 			// Espera 10 segundos antes de recibir los limites
-			sleep(10);
+			//sleep(INTERVALO_TIMER);
 
 			// Lee el primer mensaje con el codigo de limites
 			msgrcv(msgid, &message, sizeof(message), COD_LIMITES, 0);
@@ -161,7 +172,7 @@ int main(int argc, char *argv[])
 			// Extrae los limites del mensaje leido
 			int rangoInicial, rangoFinal;
 			sscanf(message.msg_text, "%d %d", &rangoInicial, &rangoFinal);
-			printf("[%d] Recivido el rango: %d-%d\n", mypid, rangoInicial, rangoFinal);
+			printf("[%d] Recibido el rango: %d-%d\n", mypid, rangoInicial, rangoFinal);
 
 			// Calcula si es primo
 			for (int i=rangoInicial; i<=rangoFinal; i++)
@@ -178,7 +189,7 @@ int main(int argc, char *argv[])
 			sprintf(message.msg_text, "%d", mypid);
 			msgsnd(msgid, &message, sizeof(message), IPC_NOWAIT);
 
-			// Termina el hijo
+			// Termina el calculador
 			exit(0);
 		}
 
@@ -220,13 +231,10 @@ int main(int argc, char *argv[])
 			imprimirJerarquiaProc(getppid(), pidservidor, pidhijos, numhijos);
 
 			// Espera 60 segundos antes de terminar
-			sleep(20);
+			//sleep(60);
 
 			// Estructura para comprobar si quedan mensajes
-			struct msqid_ds quedanMensajes;
-			msgctl(msgid, IPC_STAT, &quedanMensajes);
-
-			while (quedanMensajes.msg_qnum) // Leer los mensajes mientras quede alguno en la cola
+			do // Se ejecuta mientras haya un calculador activo
 			{
 				// Variables de control
 				int numeroPrimo = 0, pidPrimo = 0;
@@ -247,11 +255,14 @@ int main(int argc, char *argv[])
 					// Mostrar en pantalla los mensajes y guardarlos en el fichero
 					informar(resultado2, verboso);
 
+					// Guardar el contenido en el fichero
+					fputs(resultado2, primos);
+
 					// Si coincide que el numero de primos sea divisible por 5
-					if (!(++numeroprimos % 5))
+					if (!(++numeroprimos % CADA_CUANTOS_ESCRIBO))
 					{
 						// Crear la cadena de resultado
-						sprintf(resultado, "%d %d\n",numeroprimos, numeroPrimo);
+						sprintf(resultado, "%3d %d\n",numeroprimos, numeroPrimo);
 
 						// Guardar la cadena en el fichero
 						fputs(resultado, cuentaprimos);
@@ -260,20 +271,30 @@ int main(int argc, char *argv[])
 
 				else if (message.msg_type == COD_FIN)
 				{
+					// Termino un calculador
+					hijosterminados++;
+
 					// Leer los datos si el codigo es el de fin
 					sscanf(message.msg_text, "%d", &pidPrimo);
+
+					// Mostrar en pantalla la salida del proceso
 					printf("[%d] Proceso terminado\n", pidPrimo);
 				}
 
-				// Comprobar si quedan mensajes
-				msgctl(msgid, IPC_STAT, &quedanMensajes);
+				else
+				{
+					// Meter el mensaje de nuevo a la cola
+					msgsnd(msgid, &message, sizeof(message), IPC_NOWAIT);
+				}
 			}
+			while (hijosterminados < numhijos); // Leer los mensajes mientras quede alguno en la cola
 
 			// Elimina la cola
 			msgctl(msgid, IPC_RMID, NULL);
 
 			// Cierra los ficheros
 			fclose(cuentaprimos);
+			fclose(primos);
 
 			// Libera la memoria dinamica
 			free(pidhijos);
@@ -291,7 +312,9 @@ int main(int argc, char *argv[])
 
 		// Mostrar en pantalla los segundos pasados
 		printf("Tiempo transcurrido: %d\n", cuentasegundos);
+		printf("RESULTADO: %d primos detectados\n", contarLineas());
 	}
 
 	return 0;
 }
+
